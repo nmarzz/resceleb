@@ -20,7 +20,7 @@ def get_args(parser):
     parser.add_argument('--device', type=str, nargs='+', default=['cpu'],
                         help='Name of CUDA device(s) being used (if any). Otherwise will use CPU. \
                             Can also specify multiple devices (separated by spaces) for multiprocessing.')
-    parser.add_argument('--optimizer', type=str, choices=['sgd','adam'] ,metavar='O')    
+    parser.add_argument('--optimizer', type=str, choices=['sgd','adam'] ,default = 'adam',metavar='O')    
     parser.add_argument('--lr', type=float, default = 1e-3)                                                      
     parser.add_argument('--epochs', type=int, default = 10)                                                      
     parser.add_argument('--batch-size', type=int, default = 256)    
