@@ -1,29 +1,23 @@
 import torch
+from argparse import Namespace
 from torch import nn
 from torch.utils.data import DataLoader
 import torch.optim as optim
 import numpy as np
-
-def run_training(model:nn.Module,train_loader:DataLoader,val_loader:DataLoader,device:torch.device):
-    trainer = MLPTrainer(model,train_loader,val_loader,device)
-    print('*'*80 )
-    print('Training model')
-    trainer.train()
-    print('Training Complete')
-
-
-
-
-
+from logger import Logger
 
 class Trainer():
-    def __init__(self, model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, device: torch.device):
+    def __init__(self, model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, device: torch.device,logger : Logger,idx:int,args:Namespace):
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.device = device
         self.early_stop = 50
-        self.epochs = 100
+        self.epochs = args.epochs
+        self.idx = idx
+        self.logger = logger
+        self.eval_set = 'Validation Set'
+        self.model_path = logger.get_model_path()  
 
         self.iters = [] 
         
@@ -33,8 +27,9 @@ class Trainer():
         self.val_accs = []
         self.train_accs5 = []
         self.val_accs5 = []
+        self.num_devices = len(args.device)
 
-        self.model.to(self.device)
+        # self.model.to(self.device)
 
 
     def train(self):
@@ -43,15 +38,20 @@ class Trainer():
             train_loss, train_acc, train_acc5 = self.train_epoch(epoch)
             val_loss, val_acc, val_acc5 = self.validate()
 
-            print(f'Training: Average Loss {train_loss}')
+            self.logger.log('\n')
+            self.logger.log('\n')
+            self.logger.log(f'Training: Average Loss {train_loss}')
             if train_acc is not None:
-                print('Training set: Average top-1 accuracy: {:.2f}'.format(train_acc))
-                print('Training set: Average top-5 accuracy: {:.2f}'.format(train_acc5))
-                print('Test set: Average loss: {:.6f}'.format(val_loss))
+                self.logger.log('Training set: Average top-1 accuracy: {:.2f}'.format(train_acc))
+                self.logger.log('Training set: Average top-5 accuracy: {:.2f}'.format(train_acc5))
+                self.logger.log('Validation set: Average loss: {:.6f}'.format(val_loss))
+                self.logger.log('\n')
 
             if val_acc is not None:
-                print('Test set: Top-1 Accuracy: {:.2f}'.format(val_acc))
-                print('Test set: Top-5 Accuracy: {:.2f}'.format( val_acc5))                                        
+                self.logger.log('Validation set: Top-1 Accuracy: {:.2f}'.format(val_acc))
+                self.logger.log('Validation set: Top-5 Accuracy: {:.2f}'.format( val_acc5))                                        
+                self.logger.log('\n')
+                self.logger.log('\n')
 
             self.train_losses.append(train_loss)
             self.val_losses.append(val_loss)
@@ -67,7 +67,38 @@ class Trainer():
                     break
             else:
                 epochs_until_stop = self.early_stop
+                if self.idx == 0:
+                    # Save model when loss improves
+                    current_model_path = self.model_path
+                    self.logger.log("Saving model...")
+                    if self.num_devices > 1:
+                        torch.save(self.model.module.state_dict(), current_model_path)
+                    else:
+                        torch.save(self.model.state_dict(), current_model_path)
+                    self.logger.log("Model saved.\n")
 
+        if self.idx == 0:
+            self.train_report() 
+
+    def train_report(self):
+        best_epoch = np.argmin(self.val_losses)
+        self.logger.log("Training complete.\n")
+        self.logger.log("Best Epoch: {}".format(best_epoch + 1))
+        self.logger.log("Training Loss: {:.6f}".format(
+            self.train_losses[best_epoch]))
+        if self.train_accs[best_epoch] is not None:
+            self.logger.log("Training Top-1 Accuracy: {:.2f}".format(
+                self.train_accs[best_epoch]))
+            self.logger.log("Training Top-5 Accuracy: {:.2f}".format(
+                self.train_accs5[best_epoch]))
+        self.logger.log("{} Loss: {:.6f}".format(
+            self.eval_set, self.val_losses[best_epoch]))
+        if self.val_accs[best_epoch] is not None:
+            self.logger.log("{} Top-1 Accuracy: {:.2f}".format(
+                self.eval_set, self.val_accs[best_epoch]))
+            self.logger.log("{} Top-5 Accuracy: {:.2f}".format(
+                self.eval_set, self.val_accs5[best_epoch]))
+    
     def train_epoch(self, epoch):
         pass
 
@@ -76,12 +107,16 @@ class Trainer():
 
 
 
-class MLPTrainer(Trainer):
-    def __init__(self, model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, device: torch.device):
-        super().__init__(model, train_loader, val_loader, device)
 
-        self.loss_function = nn.CrossEntropyLoss()
-        self.optimizer = optim.SGD(model.parameters(), lr=0.01, momentum = 0.9)                
+class ResNet50_Trainer(Trainer):
+    def __init__(self, model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, device: torch.device,logger:Logger,idx:int,args :Namespace):
+        super().__init__(model, train_loader, val_loader, device,logger,idx,args)
+
+        self.loss_function = nn.CrossEntropyLoss()        
+        if args.optimizer == 'sgd':
+            self.optimizer = optim.SGD(model.parameters(), lr=args.lr)                
+        elif args.optimizer == 'adam':
+            self.optimizer = optim.Adam(model.parameters(), lr=args.lr)                
         
 
 
@@ -93,7 +128,7 @@ class MLPTrainer(Trainer):
         for batch_idx, (data, target) in enumerate(self.train_loader):            
             data, target = data.to(self.device), target.to(self.device)
             self.optimizer.zero_grad()
-            output = self.model(data)
+            output = self.model(data)            
             loss = self.loss_function(output, target)
             
             top1_acc, top5_acc = compute_accuracy(output, target)
@@ -102,21 +137,20 @@ class MLPTrainer(Trainer):
             train_top5_acc.update(top5_acc)
             loss.backward()
             self.optimizer.step()
-
-        
-            logged_loss = train_loss.get_avg()            
-                        
-            # log_str = 'Train Epoch {} [{}/{} ({:.0f}%)]\tLoss: {:6f}'.format(
-            #     epoch, batch_idx * len(data), int(len(self.train_loader.dataset) / self.num_devices),
-            #     100. * batch_idx / len(self.train_loader), logged_loss)
-            # self.logger.log(log_str)
-        
             
+
+            if batch_idx % 10 ==0:
+                logged_loss = train_loss.get_avg()            
+                                        
+                log_str = 'Train Epoch {} [{}/{} ({:.0f}%)]\tLoss: {:6f}'.format(
+                    epoch, batch_idx * len(data), int(len(self.train_loader.dataset) / self.num_devices),
+                    100. * batch_idx / len(self.train_loader), logged_loss)
+                self.logger.log(log_str)                    
 
         return train_loss.get_avg(), train_top1_acc.get_avg(), train_top5_acc.get_avg()
 
     def validate(self):
-        return predict(self.model, self.device, self.val_loader, self.loss_function)
+        return predict(self.model, self.device, self.val_loader, self.loss_function,verbose = True)
 
 
 
@@ -160,7 +194,7 @@ def compute_accuracy(output, target):
 
 def predict(model: nn.Module, device: torch.device, 
     loader: torch.utils.data.DataLoader, loss_function: nn.Module, 
-    precision: str = '32', calculate_confusion: bool = False) -> tuple([float, float]):
+    precision: str = '32', calculate_confusion: bool = False,verbose :bool = False) -> tuple([float, float]):
     """Evaluate supervised model on data.
 
     Args:
@@ -182,7 +216,12 @@ def predict(model: nn.Module, device: torch.device,
     acc5 = 0
     confusion = []
     with torch.no_grad():
-        for data, target in loader:
+        n_batch = len(loader)
+        for i,batch in enumerate(loader):
+            if verbose and (i % 100 == 0):
+                print(f'Evaluating batch {i} of {n_batch} for testing')
+            
+            data,target = batch
             data, target = data.to(device),target.to(device)
             output = model(data)                                
             loss += loss_function(output, target).item()

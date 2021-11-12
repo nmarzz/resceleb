@@ -1,0 +1,60 @@
+root_to_celeba: /mnt/data/scratch/data/face-recognition/
+log_dir: logs
+
+hair_color_vals: 
+- bald
+- blackhair
+- blondhair
+- brownhair
+- greyhair
+
+hair_style_vals:
+- bald
+- bangs
+- recedinghairline
+- straighthair
+- wavyhair
+- hat
+
+attributes: 
+  - 5shadow
+  - archedeyebrows
+  - attractive
+  - bagsundereyes
+  - bald
+  - bangs
+  - biglips
+  - bignose
+  - blackhair
+  - blondhair
+  - blurry
+  - brownhair
+  - bushyeyebrows
+  - chubby
+  - doublechin
+  - eyeglasses
+  - goatee
+  - grayhair
+  - heavymakeup
+  - highcheekbones
+  - male
+  - mouthopen
+  - mustache
+  - narroweyes
+  - nobeard
+  - ovalface
+  - paleskin
+  - pointynose
+  - recedinghairline
+  - rosycheeks
+  - sideburns
+  - smiling
+  - straighthair
+  - wavyhair
+  - earrings
+  - hat
+  - lipstick
+  - necklace
+  - necktie
+  - young
+
